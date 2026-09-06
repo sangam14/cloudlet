@@ -1,141 +1,145 @@
-<div style="text-align:center">
-    <h1> Cloudlet</h1>
-    <p>The almost fast FaaS</p>
-    <img src="./assets/demo.gif" alt="Demo" />
-</div>
+# Cloudlet + BoxLite
 
-## Table of Contents
+A local sandbox console: React, TypeScript, shadcn/ui, and a Rust API with
+**BoxLite 0.10.0 as its embedded primary runtime**. The custom TAP-based VMM
+is retained as legacy source, not used by the dashboard.
 
-- [Table of Contents](#table-of-contents)
-- [Prerequisites](#prerequisites)
-- [Run Locally](#run-locally)
-  - [Clone the project](#clone-the-project)
-  - [Setup](#setup)
-  - [Start the VMM](#start-the-vmm)
-  - [Run the API](#run-the-api)
-  - [Send the request using the CLI](#send-the-request-using-the-cli)
-- [Architecture](#architecture)
-- [Config file](#config-file)
+## Build and run
 
-## Prerequisites
+Build prerequisites: current Rust, Node.js 22.12+ with npm, C/C++ tools,
+pkg-config, and protoc. Cargo downloads BoxLite's official platform runtime
+bundle on the first build. Cargo's offline flag does not prevent downloads
+performed by BoxLite's build script.
 
-Install the dependencies. On Debian/Ubuntu:
-
-```bash
-apt install build-essential cmake pkg-config libssl-dev flex bison libelf-dev iptables
+```sh
+npm --prefix frontend ci
+npm --prefix frontend run build
+cargo build --release -p cloudlet
+./target/release/cloudlet doctor
+./target/release/cloudlet dashboard
 ```
 
-Then, configure the Rust toolchain and install [Just](https://github.com/casey/just) (only for dev environment):
+Open [the console](http://127.0.0.1:3000/). No Node.js, separate broker,
+frontend directory, kernel build, FUSE rootfs builder, or CAP_NET_ADMIN is
+needed at runtime for these templates. One executable is distributed, not one
+process: BoxLite extracts helpers/firmware and stores OCI images and guest disks.
 
-```bash
-rustup target add x86_64-unknown-linux-musl
-cargo install just # optional
+## Linux setup
+
+Run as your ordinary user with read/write access to /dev/kvm. BoxLite performs
+a real KVM smoke test at initialization. From a normal host terminal:
+
+```sh
+ls -l /dev/kvm
+id -nG
+test -r /dev/kvm && test -w /dev/kvm
+./target/release/cloudlet doctor
 ```
 
-Finally, install [the protobuf compiler](https://github.com/protocolbuffers/protobuf?tab=readme-ov-file#protobuf-compiler-installation).
+If missing, check firmware virtualization and the appropriate KVM kernel module.
+If the device is owned by group kvm, an administrator can add your user to that
+group; log out and back in. Do not make KVM world-writable or run the console
+as root. Restricted containers may hide KVM even when the host supports it.
+Use a host terminal or an explicitly device-enabled environment; do not bypass
+no_new_privs. Restart Cloudlet after fixing access.
 
-## Run Locally
+The UI stays available if runtime initialization fails and shows diagnostics.
+Initialization readiness is not proof of OCI guest boot; the execution stream
+reports when that happens.
 
-### Clone the project
+## Runtime policy
 
-```bash
-git clone https://github.com/virt-do/cloudlet
-```
+- Fixed OCI templates: Rust 1.90, Python 3.13, Node.js 22 on Debian Bookworm.
+- Guest execution as UID/GID 65534. No host mounts, credentials, or published ports.
+- Guest ingress and egress disabled. Host-side OCI pulls still need Internet access.
+- BoxLite default jailer/seccomp/namespaces enabled, never silently disabled.
+- Two vCPUs, 1024 MiB RAM, 8 GiB requested sparse guest disk. This is not a strict
+  host disk quota: the base image can require a larger disk.
+- One execution across clients; 60-second command / 10-minute cold-start deadline.
+- Application output cap 1 MiB and bounded SSE queue; slow consumers cancel.
+  The SDK has internal buffering, so this is not a hard host-memory quota.
+- Completion, cancellation, disconnect, or timeout triggers guest stop.
+  Cleanup failure blocks another execution until resolved.
+- Retained stopped disks and persistent metadata; at most 100 sandboxes.
+  Remove deletes a stopped guest disk permanently, never force-deleting live boxes.
 
-### Setup
+Image tags are fixed, not immutable digests. Host cgroup enforcement is not
+independently verified. This is a local development control plane, not a
+reviewed hostile multi-tenant execution service.
 
-Go to the project directory:
+## Configuration
 
-```bash
-cd cloudlet
-```
+| Variable | Default / purpose |
+| --- | --- |
+| CLOUDLET_API_HOST | 127.0.0.1 |
+| CLOUDLET_API_PORT | 3000 |
+| CLOUDLET_BOXLITE_HOME | $XDG_DATA_HOME/cloudlet/boxlite or ~/.local/share/cloudlet/boxlite |
+| CLOUDLET_API_AUTH_TOKEN | Optional on loopback; 16+ printable non-space characters |
+| CLOUDLET_API_ALLOW_REMOTE | Explicit non-loopback opt-in; also requires a token |
 
-Create a TOML config file or update the [existing one](./src/cli/examples/config.toml):
+One process owns each BoxLite state directory. Do not point Cloudlet at an
+unrelated BoxLite store. Legacy VMM endpoint/token settings do not select the
+execution backend. The browser stores API tokens in tab memory only. Remote
+use needs trusted TLS and additional review. Same-origin and loopback Host
+guards remain enforced. CSP permits inline styles for Radix positioning/modal
+scroll locking, but not inline scripts or eval.
 
-```bash
-cat << EOF > src/cli/examples/config.toml
-workload-name = "fibonacci"
-language = "rust"
-action = "prepare-and-run"
+## Console and API
 
-[server]
-address = "localhost"
-port = 50051
+Dashboard metrics report guest allocations, not host capacity. Sandboxes shows
+persistent inventory with stop/remove controls. Activity streams preparation,
+stdout/stderr, exit status, and cleanup errors. Output history is tab-local;
+download before reloading.
 
-[build]
-source-code-path = "$(readlink -f ./src/cli/examples/main.rs)"
-release = true
-EOF
-```
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | /healthz | Public API/runtime initialization status |
+| GET | /api/v1/overview | Authenticated diagnostics and persistent inventory |
+| POST | /api/v1/workloads | Rust/Python/Node source execution, SSE |
+| POST | /api/v1/sandboxes/{id}/stop | Stop exact sandbox, including another tab's execution |
+| DELETE | /api/v1/sandboxes/{id} | Remove stopped sandbox, never force |
+| POST | /api/v1/vmm/shutdown | Compatibility alias for active execution cancellation |
 
-Make sure to update the `source-code-path` to the path of the source code you want to run.
-Use an absolute path.
+See [API contract](src/api/README.md) for request shapes. Snapshot/clone,
+arbitrary OCI image/command execution, and model management are not exposed.
 
-[Here](#config-file) are more informations about each field
-
-### Start the VMM
-
-> [!WARNING]
-> Make sure to replace `CARGO_PATH` environment variable with the path to your cargo binary
-> 
-> ```bash
-> export CARGO_PATH=$(which cargo)
-> ```
-
-```bash
-sudo -E capsh --keep=1 --user=$USER --inh=cap_net_admin --addamb=cap_net_admin -- -c  'RUST_BACKTRACE=1 '$CARGO_PATH' run --bin vmm -- grpc'
-```
-
-### Run the API
-
-```bash
-cargo run --bin api
-```
-
-### Send the request using the CLI
-
-```bash
-cargo run --bin cli -- run --config-path src/cli/examples/config.toml
-```
-
-> [!NOTE]
-> If it's your first time running the request, `cloudlet` will have to compile a kernel and an initramfs image.
-> This will take a while, so make sure you do something else while you wait...
+**Models:** BoxLite supplies sandbox compute, not inference. The legacy llmman
+bridge is not attached to these network-disabled guests. Model connectivity
+requires an explicit outbound/secret policy; no models or providers are installed.
 
 ## Architecture
 
-Here is a simple sequence diagram of Cloudlet:
-
-```mermaid
-sequenceDiagram
-    participant CLI
-    participant API
-    participant VMM
-    participant Agent
-
-    CLI->>API: HTTP Request /run
-    API->>VMM: gRPC Request to create VM
-    VMM->>Agent: Creation of the VM
-    VMM->>Agent: gRPC Request to the agent
-    Agent->>Agent: Build and run code
-    Agent-->>VMM: Stream Response
-    VMM-->>API: Stream Response
-    API-->>CLI: HTTP Response
+```text
+cloudlet executable
+├── Embedded React + shadcn/ui assets → browser
+├── Rust HTTP API ← same-origin requests / bearer policy
+│   ├── Shared control-plane contracts
+│   ├── Admission / output / cancellation / cleanup policy
+│   └── Embedded BoxLite SDK
+│       ├── OCI cache + SQLite inventory + retained disks
+│       └── Isolated shim subprocess → libkrun / KVM → OCI guest
+└── Optional legacy-vmm feature (not used by dashboard)
 ```
 
-1. The CLI sends an HTTP request to the API which in turn sends a gRPC request to the VMM
-2. The VMM then creates a VM
-3. When a VM starts it boots on the agent which holds another gRPC server to handle requests
-4. The agent then builds and runs the code
-5. The response is streamed back to the VMM and then to the API and finally to the CLI.
+Frontend primitives live in frontend/src/components/ui. Runtime policy lives
+in src/api/src/runtime.rs; HTTP/auth/SSE in service.rs; shared contracts in
+src/control-plane; executable dispatch in src/cloudlet. Legacy src/vmm,
+src/agent, and src/fs-gen remain separate workspace crates.
+[Historical setup](docs/legacy-vmm.md) is reference only.
 
-## Config file
-| Field | Description | Type |
-| --- | --- | --- |
-| workload-name | Name of the workload you wanna run | String |
-| language | Language of the source code | String enum: rust, python node |
-| action | Action to perform | String enum: prepare-and-run |
-| server.address | Address of the server (currently not used) | String |
-| server.port | Port of the server (currently not used) | Integer |
-| build.source-code-path | Path to the source code on your local machine | String |
-| build.release | Build the source code in release mode | Boolean |
+## Development and verification
+
+Run the API and npm --prefix frontend run dev in separate terminals. Vite
+proxies API calls to port 3000. Rebuild frontend then Rust for release changes.
+
+```sh
+npm --prefix frontend test
+npm --prefix frontend run build
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
+KVM-independent tests do not replace running templates on a real host.
+BoxLite's upstream build script can print informational cargo:warning lines
+while embedding assets; these are separate from Cloudlet compiler lints.

@@ -9,7 +9,7 @@
 
 use kvm_bindings::kvm_segment;
 use std::mem;
-use vm_memory::{Bytes, GuestAddress, GuestMemory, GuestMemoryMmap};
+use vm_memory::{Bytes, GuestAddress, GuestMemoryBackend, GuestMemoryMmap};
 
 pub const BOOT_GDT_OFFSET: u64 = 0x500;
 pub const BOOT_IDT_OFFSET: u64 = 0x520;

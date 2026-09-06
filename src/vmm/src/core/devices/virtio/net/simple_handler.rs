@@ -28,6 +28,7 @@ use crate::core::devices::virtio::SignalUsedQueue;
 const MAX_BUFFER_SIZE: usize = 65562;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum Error {
     GuestMemory(vm_memory::GuestMemoryError),
     Queue(virtio_queue::Error),

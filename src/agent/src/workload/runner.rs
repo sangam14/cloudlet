@@ -21,18 +21,18 @@ pub struct Runner {
 }
 
 impl Runner {
-    pub fn new(config: Config, child_processes: Arc<Mutex<HashSet<u32>>>) -> Self {
+    pub fn new(config: Config, child_processes: Arc<Mutex<HashSet<u32>>>) -> AgentResult<Self> {
         let agent: Box<dyn Agent + Sync + Send> = match config.language {
-            Language::Rust => Box::new(rust::RustAgent::from(config.clone())),
+            Language::Rust => Box::new(rust::RustAgent::try_from(config.clone())?),
             #[cfg(feature = "debug-agent")]
             Language::Debug => Box::new(debug::DebugAgent::from(config.clone())),
         };
 
-        Self {
+        Ok(Self {
             config,
             agent,
             child_processes,
-        }
+        })
     }
 
     pub fn new_from_execute_request(
@@ -40,7 +40,7 @@ impl Runner {
         child_processes: Arc<Mutex<HashSet<u32>>>,
     ) -> Result<Self, AgentError> {
         let config = Config::new_from_execute_request(execute_request)?;
-        Ok(Self::new(config, child_processes))
+        Self::new(config, child_processes)
     }
 
     pub async fn run(self) -> AgentResult<Receiver<AgentOutput>> {

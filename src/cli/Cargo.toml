@@ -6,12 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "4.5.3", features = ["derive"] }
-toml = "0.8.12"
-tokio = { version = "1.36.0", features = ["full"] }
-serde = { version = "1.0.197", features = ["derive"] }
+clap = { version = "4.6.6", features = ["derive"] }
+toml = "1.1.5"
+tokio = { version = "1.53.1", features = ["full"] }
+serde = { version = "1.0.229", features = ["derive"] }
 serde_yaml = "0.9.34"
-schemars = "0.8.16"
-serde_json = "1.0.115"
-reqwest = "0.12.3"
-shared_models = { path="../shared-models" }
+schemars = "1.2.2"
+serde_json = "1.0.151"
+reqwest = { version = "0.13.4", features = ["json"] }
+control_plane = { package = "cloudlet-control-plane", path="../control-plane" }

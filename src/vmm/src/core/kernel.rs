@@ -10,7 +10,7 @@ use linux_loader::loader::{elf::Elf, load_cmdline, KernelLoader, KernelLoaderRes
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::result;
-use vm_memory::{Address, Bytes, GuestAddress, GuestMemory, GuestMemoryMmap};
+use vm_memory::{Address, Bytes, GuestAddress, GuestMemoryBackend, GuestMemoryMmap};
 
 // x86_64 boot constants. See https://www.kernel.org/doc/Documentation/x86/boot.txt for the full
 // documentation.
@@ -42,7 +42,10 @@ const HIMEM_START: u64 = 0x0010_0000; // 1 MB
 /// Address where the kernel command line is written.
 const CMDLINE_START: u64 = 0x0002_0000;
 // Default command line
-const DEFAULT_CMDLINE: &str = "console=ttyS0 i8042.nokbd reboot=k panic=1 pci=off ip=172.29.0.2::172.29.0.1:255.255.0.0::eth0:off";
+// Network configuration is emitted by the VMM's virtio-net device. Keeping it
+// out of this static command line prevents a stale hard-coded subnet from
+// overriding the per-VM network policy.
+const DEFAULT_CMDLINE: &str = "console=ttyS0 i8042.nokbd reboot=k panic=1 pci=off";
 
 fn add_e820_entry(
     params: &mut boot_params,
@@ -56,7 +59,7 @@ fn add_e820_entry(
 
     params.e820_table[params.e820_entries as usize].addr = addr;
     params.e820_table[params.e820_entries as usize].size = size;
-    params.e820_table[params.e820_entries as usize].type_ = mem_type;
+    params.e820_table[params.e820_entries as usize].r#type = mem_type;
     params.e820_entries += 1;
 
     Ok(())
@@ -122,7 +125,7 @@ fn load_initramfs(mem: &GuestMemoryMmap, start_addr: u64, data: Vec<u8>) -> Resu
 /// # Arguments
 ///
 /// * `kernel_cfg` - [`KernelConfig`](struct.KernelConfig.html) struct containing kernel
-///                  configurations.
+///   configurations.
 pub fn kernel_setup(
     guest_memory: &GuestMemoryMmap,
     kernel_path: PathBuf,

@@ -1,0 +1,9 @@
+[package]
+name = "cloudlet-control-plane"
+description = "Stable HTTP and dashboard contracts for Cloudlet's control plane"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.61", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }

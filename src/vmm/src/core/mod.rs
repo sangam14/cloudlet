@@ -40,7 +40,7 @@ pub enum Error {
     /// vCPU errors.
     Vcpu(cpu::Error),
     /// Memory error.
-    Memory(vm_memory::Error),
+    Memory(vm_memory::mmap::FromRangesError),
     /// Serial creation error
     SerialCreation(devices::Error),
     /// PTY creation error
@@ -52,7 +52,7 @@ pub enum Error {
     /// epoll creation error
     EpollError(io::Error),
     /// STDIN read error
-    StdinRead(kvm_ioctls::Error),
+    StdinRead(vmm_sys_util::errno::Error),
     /// STDIN write error
     StdinWrite(vm_superio::serial::Error<io::Error>),
     /// PTY read error
@@ -60,7 +60,7 @@ pub enum Error {
     /// PTY serial write error
     PtySerialWrite(vm_superio::serial::Error<io::Error>),
     /// Terminal configuration error
-    TerminalConfigure(kvm_ioctls::Error),
+    TerminalConfigure(vmm_sys_util::errno::Error),
     // Tap open error
     OpenTap(open_tap::Error),
     // PTY write error

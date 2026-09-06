@@ -27,7 +27,6 @@ pub mod sockios;
 pub use if_tun::{sock_fprog, IFF_MULTI_QUEUE, IFF_NO_PI, IFF_TAP, IFF_VNET_HDR};
 pub use iff::{ifreq, net_device_flags_IFF_UP, sockaddr, AF_INET};
 pub use inn::sockaddr_in;
-use vmm_sys_util::ioctl_ioc_nr;
 use vmm_sys_util::ioctl_ior_nr;
 use vmm_sys_util::ioctl_iow_nr;
 

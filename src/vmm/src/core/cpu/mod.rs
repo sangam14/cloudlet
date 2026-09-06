@@ -8,10 +8,10 @@ use crate::core::devices::serial::{
 use kvm_bindings::{kvm_fpu, kvm_regs, CpuId};
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
 use std::convert::TryInto;
-use std::io::Stdout;
+use std::io::{IsTerminal, Stdout};
+use std::result;
 use std::sync::{Arc, Mutex};
 use std::{io, process};
-use std::{result, u64};
 use tracing::{error, info, warn};
 use vm_device::bus::MmioAddress;
 use vm_device::device_manager::{IoManager, MmioManager};
@@ -245,10 +245,17 @@ impl Vcpu {
                 VcpuExit::Shutdown | VcpuExit::Hlt => {
                     info!(?exit_reason, "Guest shutdown. Bye!");
                     let stdin = io::stdin();
-                    let stdin_lock = stdin.lock();
-                    stdin_lock.set_canon_mode().unwrap();
+                    if stdin.is_terminal() {
+                        let stdin_lock = stdin.lock();
+                        if let Err(error) = stdin_lock.set_canon_mode() {
+                            warn!(
+                                ?error,
+                                "could not restore terminal mode after guest shutdown"
+                            );
+                        }
+                    }
 
-                    unsafe { libc::exit(0) };
+                    process::exit(0);
                 }
 
                 // This is a PIO write, i.e. the guest is trying to write

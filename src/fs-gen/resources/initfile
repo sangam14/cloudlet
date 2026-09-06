@@ -16,6 +16,17 @@ export PATH=$CARGO_HOME/bin:$PATH
 
 ln -s /proc/net/pnp /etc/resolv.conf
 
-/agent
+# The VMM supplies a fresh, hex-encoded token on the kernel command line for
+# every guest boot. It authenticates the host-to-agent RPC path without adding
+# the token to the workload process environment.
+for cloudlet_arg in $(cat /proc/cmdline); do
+    case "$cloudlet_arg" in
+        cloudlet.agent-token=*)
+            export CLOUDLET_AGENT_AUTH_TOKEN="${cloudlet_arg#cloudlet.agent-token=}"
+            ;;
+    esac
+done
+
+exec /agent
 
 reboot

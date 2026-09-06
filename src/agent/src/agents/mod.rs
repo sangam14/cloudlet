@@ -87,6 +87,8 @@ mod process_utils {
         task::JoinHandle,
     };
 
+    const MAX_STREAM_BYTES: usize = 64 * 1024;
+
     /// Spawn a tokio thread and send each line of `stdout`` to the `tx` given as a parameter.
     pub async fn send_stdout_to_tx(
         stdout: ChildStdout,
@@ -96,8 +98,25 @@ mod process_utils {
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut reader_lines = reader.lines();
+            let mut sent_bytes: usize = 0;
+            let mut truncated = false;
 
             while let Ok(Some(line)) = reader_lines.next_line().await {
+                if sent_bytes.saturating_add(line.len()) > MAX_STREAM_BYTES {
+                    if !truncated {
+                        let _ = tx
+                            .send(AgentOutput {
+                                stage: stage.unwrap_or(Stage::Running),
+                                stdout: Some("[Cloudlet output truncated at 64 KiB]".into()),
+                                stderr: None,
+                                exit_code: None,
+                            })
+                            .await;
+                        truncated = true;
+                    }
+                    continue;
+                }
+                sent_bytes += line.len();
                 let _ = tx
                     .send(AgentOutput {
                         stage: stage.unwrap_or(Stage::Running),
@@ -119,8 +138,25 @@ mod process_utils {
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut reader_lines = reader.lines();
+            let mut sent_bytes: usize = 0;
+            let mut truncated = false;
 
             while let Ok(Some(line)) = reader_lines.next_line().await {
+                if sent_bytes.saturating_add(line.len()) > MAX_STREAM_BYTES {
+                    if !truncated {
+                        let _ = tx
+                            .send(AgentOutput {
+                                stage: stage.unwrap_or(Stage::Running),
+                                stdout: None,
+                                stderr: Some("[Cloudlet output truncated at 64 KiB]".into()),
+                                exit_code: None,
+                            })
+                            .await;
+                        truncated = true;
+                    }
+                    continue;
+                }
+                sent_bytes += line.len();
                 let _ = tx
                     .send(AgentOutput {
                         stage: stage.unwrap_or(Stage::Running),
@@ -138,8 +174,27 @@ mod process_utils {
         mut child: tokio::process::Child,
         tx: mpsc::Sender<AgentOutput>,
         send_done: bool,
+        timeout: std::time::Duration,
     ) -> Result<(), ()> {
-        let exit_status = child.wait().await.map(|status| status.code());
+        let exit_status = match tokio::time::timeout(timeout, child.wait()).await {
+            Ok(result) => result.map(|status| status.code()),
+            Err(_) => {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                let _ = tx
+                    .send(AgentOutput {
+                        stage: Stage::Failed,
+                        stdout: None,
+                        stderr: Some(format!(
+                            "workload exceeded its {} second execution limit",
+                            timeout.as_secs()
+                        )),
+                        exit_code: None,
+                    })
+                    .await;
+                return Err(());
+            }
+        };
 
         match exit_status {
             Ok(exit_code) => {

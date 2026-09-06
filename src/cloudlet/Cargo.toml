@@ -1,0 +1,15 @@
+[package]
+name = "cloudlet"
+description = "Cloudlet's embedded BoxLite runtime and web console"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+legacy-vmm = ["dep:vmm"]
+
+[dependencies]
+api = { path = "../api" }
+tokio = { version = "1.53.1", features = ["rt-multi-thread"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+vmm = { path = "../vmm", optional = true }

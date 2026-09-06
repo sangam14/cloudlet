@@ -1,12 +1,7 @@
 use crate::args::{CliArgs, Commands};
 use clap::Parser;
-use tonic::transport::Server;
 use tracing::info;
-use vmm::{
-    core::vmm::VMM,
-    grpc::server::{vmmorchestrator, VmmService},
-    VmmErrors,
-};
+use vmm::{core::vmm::VMM, security::VmmServiceConfig, VmmErrors};
 mod args;
 
 #[tokio::main]
@@ -20,19 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Starting application",
     );
 
-    let addr = "[::1]:50051".parse().unwrap();
-    let vmm_service = VmmService;
-
     // check if the args is grpc or command
     match args.command {
         Commands::Grpc => {
             tracing_subscriber::fmt().init();
-            Server::builder()
-                .add_service(vmmorchestrator::vmm_service_server::VmmServiceServer::new(
-                    vmm_service,
-                ))
-                .serve(addr)
-                .await?;
+            let config = VmmServiceConfig::try_from_env()?;
+            vmm::serve_grpc(config).await?;
         }
         Commands::Cli(cli_args) => {
             tracing_subscriber::fmt()

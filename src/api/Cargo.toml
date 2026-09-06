@@ -6,16 +6,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-web = "4.5.1"
-serde = "1.0.197"
-tonic = "0.9"
-prost = "0.11"
-shared_models = { path="../shared-models" }
-tokio = { version= "1.37.0", features= ["full"]}
-tokio-stream = "0.1.15"
-actix-web-lab = "0.20"
+actix-web = "4.15.0"
+serde = "1.0.229"
+tonic = "0.14"
+tonic-prost = "0.14"
+prost = "0.14"
+control_plane = { package = "cloudlet-control-plane", path="../control-plane" }
+tokio = { version= "1.53.1", features= ["full"]}
+tokio-stream = "0.1.19"
+actix-web-lab = "0.27"
 async-stream = "0.3"
+futures = "0.3.34"
 serde_json = "1.0"
+include_dir = "0.7.4"
+boxlite = "=0.10.0"
 
 [build-dependencies]
-tonic-build = "0.9"
+tonic-build = "0.14"
+tonic-prost-build = "0.14"

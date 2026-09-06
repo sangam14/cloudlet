@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf};
 
-use clap::{command, error::ErrorKind, ArgAction, CommandFactory, Parser};
+use clap::{error::ErrorKind, ArgAction, CommandFactory, Parser};
 use clap_stdin::MaybeStdin;
 use regex::Regex;
 

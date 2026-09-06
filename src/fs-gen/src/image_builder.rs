@@ -48,9 +48,7 @@ fn ensure_folder_created(output_folder: &Path) -> Result<()> {
     let result = fs::create_dir_all(output_folder);
 
     // If the file already exists, we're fine
-    if result.is_err() {
-        let err = result.unwrap_err();
-
+    if let Err(err) = result {
         if err
             .raw_os_error()
             .is_some_and(|err_val| err_val != FILE_EXISTS_ERROR)

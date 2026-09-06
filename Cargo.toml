@@ -1,3 +1,11 @@
 [workspace]
-members = ["src/agent", "src/api", "src/cli", "src/fs-gen", "src/vmm"]
+members = [
+    "src/agent",
+    "src/api",
+    "src/cli",
+    "src/cloudlet",
+    "src/control-plane",
+    "src/fs-gen",
+    "src/vmm",
+]
 resolver = "2"

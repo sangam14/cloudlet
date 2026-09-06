@@ -14,6 +14,7 @@ message ExecuteRequest {
   Action action = 3;
   string code = 4;
   string config_str = 5;
+  map<string, string> environment = 6;
 }
 
 message ExecuteResponse {

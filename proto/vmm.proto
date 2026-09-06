@@ -33,8 +33,15 @@ message ExecuteResponse {
 }
 
 service VmmService {
+  rpc Health(HealthRequest) returns (HealthResponse) {};
   rpc Shutdown (ShutdownVmRequest) returns (ShutdownVmResponse) {};
   rpc Run (RunVmmRequest) returns (stream ExecuteResponse) {};
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ready = 1;
 }
 
 message RunVmmRequest {

@@ -9,7 +9,7 @@ use event_manager::{EventManager, MutEventSubscriber};
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
 use kvm_ioctls::{Kvm, VmFd};
 use linux_loader::loader::KernelLoaderResult;
-use std::io::{self, stdout, Stdout};
+use std::io::{self, stdout, IsTerminal, Stdout};
 use std::net::Ipv4Addr;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
@@ -20,7 +20,7 @@ use tracing::{error, info};
 use vm_allocator::{AddressAllocator, AllocPolicy};
 use vm_device::bus::{MmioAddress, MmioRange};
 use vm_device::device_manager::IoManager;
-use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
+use vm_memory::{Address, GuestAddress, GuestMemoryBackend, GuestMemoryMmap, GuestMemoryRegion};
 use vmm_sys_util::terminal::Terminal;
 
 use super::devices::virtio::net::device::Net;
@@ -65,6 +65,7 @@ pub struct VMM {
     serial: Arc<Mutex<LumperSerial<Stdout>>>,
     slip_pty: Arc<Mutex<SlipPty>>,
     epoll: EpollContext,
+    stdin_is_terminal: bool,
 }
 
 impl VMM {
@@ -84,7 +85,10 @@ impl VMM {
         let slip_pty = SlipPty::new()?;
 
         let epoll = EpollContext::new().map_err(Error::EpollError)?;
-        epoll.add_stdin().map_err(Error::EpollError)?;
+        let stdin_is_terminal = io::stdin().is_terminal();
+        if stdin_is_terminal {
+            epoll.add_stdin().map_err(Error::EpollError)?;
+        }
         epoll
             .add_fd(
                 slip_pty.pty_master_fd(),
@@ -115,6 +119,7 @@ impl VMM {
             )),
             slip_pty: Arc::new(Mutex::new(slip_pty)),
             epoll,
+            stdin_is_terminal,
             iface_host_addr,
             netmask,
             iface_guest_addr,
@@ -273,9 +278,11 @@ impl VMM {
 
         let stdin = io::stdin();
         let stdin_lock = stdin.lock();
-        stdin_lock
-            .set_raw_mode()
-            .map_err(Error::TerminalConfigure)?;
+        if self.stdin_is_terminal {
+            stdin_lock
+                .set_raw_mode()
+                .map_err(Error::TerminalConfigure)?;
+        }
         let mut events = [epoll::Event::new(epoll::Events::empty(), 0); EPOLL_EVENTS_LEN];
         let epoll_fd = self.epoll.as_raw_fd();
 
@@ -296,7 +303,7 @@ impl VMM {
                 let event_evts = epoll::Events::from_bits_truncate(event.events);
                 let event_data = event.data as RawFd;
 
-                if let libc::STDIN_FILENO = event_data {
+                if self.stdin_is_terminal && event_data == libc::STDIN_FILENO {
                     let mut out = [0u8; 64];
 
                     let count = stdin_lock.read_raw(&mut out).map_err(Error::StdinRead)?;
@@ -343,17 +350,37 @@ impl VMM {
         kernel_path: PathBuf,
         initramfs_path: &Option<PathBuf>,
     ) -> Result<()> {
-        let cmdline_extra_parameters = &mut Vec::new();
+        self.configure_with_boot_parameters(
+            num_vcpus,
+            mem_size_mb,
+            kernel_path,
+            initramfs_path,
+            Vec::new(),
+        )
+        .await
+    }
 
+    /// Configures a VM with Cloudlet-owned kernel parameters in addition to
+    /// device-generated parameters. The privileged VMM uses this to pass a
+    /// per-boot agent credential without putting it in a workload environment.
+    pub async fn configure_with_boot_parameters(
+        &mut self,
+        num_vcpus: u8,
+        mem_size_mb: u32,
+        kernel_path: PathBuf,
+        initramfs_path: &Option<PathBuf>,
+        mut cmdline_extra_parameters: Vec<String>,
+    ) -> Result<()> {
         self.configure_memory(mem_size_mb)?;
         self.configure_allocators(mem_size_mb)?;
-        self.configure_net_device(cmdline_extra_parameters).await?;
+        self.configure_net_device(&mut cmdline_extra_parameters)
+            .await?;
 
         let kernel_load = kernel::kernel_setup(
             &self.guest_memory,
             kernel_path,
             initramfs_path.clone(),
-            cmdline_extra_parameters,
+            &mut cmdline_extra_parameters,
         )?;
         self.configure_io()?;
         self.configure_vcpus(num_vcpus, kernel_load)?;

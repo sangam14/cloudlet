@@ -5,6 +5,7 @@ use std::fmt;
 // Any json returned by the request: image manifest, fat manifest, error...
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
+#[allow(dead_code)]
 pub enum ManifestV2 {
     ImageManifest(ImageManifest),
     ManifestList(ManifestList),
@@ -38,6 +39,7 @@ pub struct SubManifest {
 
 // Supported image platform: architecture and OS
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct Platform {
     pub architecture: String,
     pub os: String,
@@ -113,6 +115,7 @@ impl fmt::Display for Image {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Registry {
     pub name: String,
     pub auth_link: String,

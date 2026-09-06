@@ -1,11 +1,13 @@
 use super::xx_netmask_width;
 use futures::stream::TryStreamExt;
-use rtnetlink::{new_connection, Handle};
+use rtnetlink::{new_connection, Handle, LinkBridge, LinkUnspec};
 use std::net::{IpAddr, Ipv4Addr};
 use tracing::info;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum Error {
+    NewConnection(std::io::Error),
     GetIndexByName {
         name: String,
         cause: rtnetlink::Error,
@@ -28,7 +30,7 @@ pub struct Bridge {
 
 impl Bridge {
     pub async fn new(name: &str) -> Result<Self, Error> {
-        let (connection, handle, _) = new_connection().unwrap();
+        let (connection, handle, _) = new_connection().map_err(Error::NewConnection)?;
         tokio::spawn(connection);
 
         let br = Self {
@@ -45,7 +47,7 @@ impl Bridge {
             .handle
             .link()
             .get()
-            .match_name(name.into())
+            .match_name(name)
             .execute()
             .try_next()
             .await
@@ -73,8 +75,7 @@ impl Bridge {
         self.handle
             .clone()
             .link()
-            .add()
-            .bridge(self.name.clone())
+            .add(LinkBridge::new(&self.name).build())
             .execute()
             .await
             .map_err(Error::CreateBridge)
@@ -118,8 +119,11 @@ impl Bridge {
 
         self.handle
             .link()
-            .set(link_index)
-            .controller(master_index)
+            .set(
+                LinkUnspec::new_with_index(link_index)
+                    .controller(master_index)
+                    .build(),
+            )
             .execute()
             .await
             .map_err(|err| Error::AttachLink {
@@ -133,8 +137,7 @@ impl Bridge {
 
         self.handle
             .link()
-            .set(bridge_index)
-            .up()
+            .set(LinkUnspec::new_with_index(bridge_index).up().build())
             .execute()
             .await
             .map_err(Error::SetStateAsUp)

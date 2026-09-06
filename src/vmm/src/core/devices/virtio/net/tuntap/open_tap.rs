@@ -38,9 +38,7 @@ pub fn open_tap(
 ) -> Result<Tap, Error> {
     let vnet_hdr_size = vnet_hdr_len() as i32;
     // Check if the given interface exists before we create it.
-    let tap_existed = if_name.map_or(false, |n| {
-        Path::new(&format!("/sys/class/net/{n}")).exists()
-    });
+    let tap_existed = if_name.is_some_and(|n| Path::new(&format!("/sys/class/net/{n}")).exists());
 
     let tap: Tap = match if_name {
         Some(name) => Tap::open_named(name, 1, flags).map_err(Error::TapOpen)?,

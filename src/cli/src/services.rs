@@ -1,10 +1,8 @@
 use crate::utils::ConfigFileHandler;
+use control_plane::{BuildConfig, Language, ServerConfig, ShutdownResponse, WorkloadRequest};
 use reqwest::Client;
 use serde::Deserialize;
-use shared_models::{
-    BuildConfig, CloudletDtoRequest, CloudletShutdownResponse, Language, ServerConfig,
-};
-use std::error::Error;
+use std::{env, error::Error};
 
 #[derive(Deserialize, Debug)]
 struct TomlConfig {
@@ -19,7 +17,7 @@ struct TomlConfig {
 pub struct CloudletClient {}
 
 impl CloudletClient {
-    pub fn new_cloudlet_config(config: String) -> CloudletDtoRequest {
+    pub fn new_cloudlet_config(config: String) -> WorkloadRequest {
         let config: TomlConfig =
             toml::from_str(&config).expect("Error while parsing the config file");
 
@@ -28,26 +26,29 @@ impl CloudletClient {
             .expect("Error while reading the code file");
 
         let language = config.language;
-        CloudletDtoRequest {
+        WorkloadRequest {
             workload_name,
             language,
             code,
-            log_level: shared_models::LogLevel::INFO,
+            log_level: control_plane::LogLevel::Info,
             server: config.server,
             build: config.build,
             action: config.action,
         }
     }
 
-    pub async fn run(request: CloudletDtoRequest) -> Result<(), Box<dyn Error>> {
+    pub async fn run(request: WorkloadRequest) -> Result<(), Box<dyn Error>> {
         let client = Client::new();
         let json = serde_json::to_string(&request)?;
-        let res = client
-            .post("http://127.0.0.1:3000/run")
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(json)
-            .send()
-            .await?;
+        let endpoint = format!("{}/api/v1/workloads", Self::api_endpoint());
+        let res = Self::with_api_auth(
+            client
+                .post(endpoint)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(json),
+        )
+        .send()
+        .await?;
 
         println!("Response: {:?}", res.text().await?);
         Ok(())
@@ -55,14 +56,28 @@ impl CloudletClient {
 
     pub async fn shutdown() -> Result<bool, ()> {
         let client = Client::new();
-        let response = client.post("http://127.0.0.1:3000/shutdown").send().await;
+        let endpoint = format!("{}/api/v1/vmm/shutdown", Self::api_endpoint());
+        let response = Self::with_api_auth(client.post(endpoint)).send().await;
 
-        let shutdown_response: CloudletShutdownResponse = response
-            .unwrap()
-            .json::<CloudletShutdownResponse>()
-            .await
-            .unwrap();
+        let shutdown_response: ShutdownResponse =
+            response.unwrap().json::<ShutdownResponse>().await.unwrap();
 
         Ok(shutdown_response.success)
+    }
+
+    fn api_endpoint() -> String {
+        env::var("CLOUDLET_API_ENDPOINT")
+            .unwrap_or_else(|_| "http://127.0.0.1:3000".into())
+            .trim_end_matches('/')
+            .to_owned()
+    }
+
+    fn with_api_auth(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match env::var("CLOUDLET_API_AUTH_TOKEN") {
+            Ok(token) if !token.is_empty() => {
+                request.header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            }
+            _ => request,
+        }
     }
 }

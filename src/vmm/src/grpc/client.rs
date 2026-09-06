@@ -1,8 +1,8 @@
 use self::agent::{workload_runner_client::WorkloadRunnerClient, ExecuteRequest, SignalRequest};
 use super::server::vmmorchestrator::{ShutdownVmRequest, ShutdownVmResponse};
 use log::error;
-use std::{error::Error, net::Ipv4Addr, time::Duration};
-use tonic::{transport::Channel, Streaming};
+use std::{env, net::Ipv4Addr, time::Duration};
+use tonic::{metadata::MetadataValue, transport::Channel, Request, Status, Streaming};
 
 pub mod agent {
     tonic::include_proto!("cloudlet.agent");
@@ -10,30 +10,58 @@ pub mod agent {
 
 pub struct WorkloadClient {
     client: WorkloadRunnerClient<Channel>,
+    auth_header: Option<MetadataValue<tonic::metadata::Ascii>>,
 }
 
 impl WorkloadClient {
-    pub async fn new(ip: Ipv4Addr, port: u16) -> Result<Self, tonic::transport::Error> {
-        let delay = Duration::from_secs(2); // Setting initial delay to 2 seconds
-        loop {
-            match WorkloadRunnerClient::connect(format!("http://[{}]:{}", ip, port)).await {
+    pub async fn new(
+        ip: Ipv4Addr,
+        port: u16,
+        auth_token: Option<&str>,
+    ) -> Result<Self, tonic::transport::Error> {
+        let delay = Duration::from_secs(2);
+        let attempts = env::var("CLOUDLET_AGENT_CONNECT_ATTEMPTS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|attempts| *attempts > 0)
+            .unwrap_or(10);
+        let auth_header = auth_token.map(|token| {
+            format!("Bearer {token}")
+                .parse()
+                .expect("agent token must be valid gRPC metadata")
+        });
+        let endpoint = format!("http://[{}]:{}", ip, port);
+        let mut last_error = None;
+
+        for attempt in 1..=attempts {
+            match WorkloadRunnerClient::connect(endpoint.clone()).await {
                 Ok(client) => {
-                    return Ok(WorkloadClient { client });
+                    return Ok(WorkloadClient {
+                        client,
+                        auth_header,
+                    });
                 }
                 Err(err) => {
-                    error!("Failed to connect to Agent service: {}", err);
-                    error!("Retrying in {:?}...", delay);
-                    tokio::time::sleep(delay).await;
+                    error!(
+                        "Failed to connect to Agent service (attempt {attempt}/{attempts}): {err}"
+                    );
+                    last_error = Some(err);
+                    if attempt < attempts {
+                        tokio::time::sleep(delay).await;
+                    }
                 }
             }
         }
+
+        // The loop always performs at least one connection attempt.
+        Err(last_error.expect("agent connection attempts must produce an error"))
     }
 
     pub async fn execute(
         &mut self,
         request: ExecuteRequest,
     ) -> Result<Streaming<agent::ExecuteResponse>, tonic::Status> {
-        let request = tonic::Request::new(request);
+        let request = self.authorized_request(request)?;
         let response_stream = self.client.execute(request).await?.into_inner();
 
         Ok(response_stream)
@@ -43,18 +71,18 @@ impl WorkloadClient {
         &mut self,
         _request: ShutdownVmRequest,
     ) -> Result<ShutdownVmResponse, tonic::Status> {
-        const BROKEN_PIPE_ERROR: &str = "stream closed because of a broken pipe";
+        let signal_request = self.authorized_request(SignalRequest::default())?;
+        self.client.signal(signal_request).await?;
+        Ok(ShutdownVmResponse { success: true })
+    }
 
-        let signal_request = SignalRequest::default();
-        let response = self.client.signal(signal_request).await;
-
-        if let Err(status) = response {
-            let error = status.source().unwrap().source().unwrap().source().unwrap();
-            if error.to_string().as_str().eq(BROKEN_PIPE_ERROR) {
-                return Ok(ShutdownVmResponse { success: true });
-            }
+    fn authorized_request<T>(&self, message: T) -> Result<Request<T>, Status> {
+        let mut request = Request::new(message);
+        if let Some(auth_header) = &self.auth_header {
+            request
+                .metadata_mut()
+                .insert("authorization", auth_header.clone());
         }
-
-        Ok(ShutdownVmResponse { success: false })
+        Ok(request)
     }
 }

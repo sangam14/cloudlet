@@ -1,5 +1,19 @@
 set shell := ["/bin/bash", "-uc"]
 
+# Build-time Node only; the result serves the console without Node or a WebView.
+build-console:
+  npm --prefix frontend ci
+  npm --prefix frontend run build
+  cargo build --release -p cloudlet
+
+console:
+  ./target/release/cloudlet dashboard
+
+test-console:
+  npm --prefix frontend test
+  npm --prefix frontend run build
+  cargo test --workspace
+
 setup:
   #!/bin/bash
   set -e

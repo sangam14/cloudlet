@@ -1,13 +1,12 @@
-use actix_web::{App, HttpServer};
-use api::service::{run, shutdown};
+use api::config::ApiConfig;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let port = 3000;
-
-    println!("Starting server on port:  {}", port);
-    HttpServer::new(|| App::new().service(run).service(shutdown))
-        .bind(("127.0.0.1", port))?
-        .run()
-        .await
+    let config = ApiConfig::try_from_env()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    println!(
+        "Starting Cloudlet API on {}:{}",
+        config.bind_host, config.bind_port
+    );
+    api::serve(config).await
 }

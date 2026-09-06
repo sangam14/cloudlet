@@ -7,7 +7,7 @@ use super::{
 };
 use crate::core::devices::virtio::features::VIRTIO_F_RING_EVENT_IDX;
 use crate::core::devices::virtio::net::tuntap::open_tap::open_tap;
-use crate::core::devices::virtio::net::BRIDGE_NAME;
+use crate::core::devices::virtio::net::CLOUDLET_BRIDGE_NAME;
 use crate::core::devices::virtio::register::register_mmio_device;
 use crate::core::devices::virtio::{
     self, Config, MmioConfig, SingleFdSignalQueue, Subscriber, QUEUE_MAX_SIZE,
@@ -86,7 +86,7 @@ impl Net {
         tap.set_vnet_hdr_size(VIRTIO_NET_HDR_SIZE as i32)
             .map_err(Error::Tap)?;
 
-        let bridge_name = BRIDGE_NAME;
+        let bridge_name = CLOUDLET_BRIDGE_NAME;
         let bridge = Bridge::new(bridge_name).await.map_err(Error::Bridge)?;
 
         bridge
@@ -107,8 +107,16 @@ impl Net {
         bridge.set_up().await.map_err(Error::Bridge)?;
         info!("bridge {} set UP", bridge_name);
 
-        // Get internet access
-        iptables_ip_masq(iface_host_addr & netmask, netmask, bridge_name.into());
+        // Guest Internet egress is opt-in. Guest-to-host traffic on the private
+        // bridge (including llmman) continues to work without a host-wide NAT
+        // rule. This avoids silently exposing arbitrary workload traffic.
+        if guest_egress_enabled() {
+            iptables_ip_masq(iface_host_addr & netmask, netmask, bridge_name.into());
+        } else {
+            info!(
+                "guest Internet egress is disabled; set CLOUDLET_ALLOW_GUEST_EGRESS=true to opt in"
+            );
+        }
 
         let net = Arc::new(Mutex::new(Net {
             mem,
@@ -129,6 +137,13 @@ impl Net {
 
         Ok(net)
     }
+}
+
+fn guest_egress_enabled() -> bool {
+    matches!(
+        std::env::var("CLOUDLET_ALLOW_GUEST_EGRESS").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+    )
 }
 
 impl VirtioDeviceType for Net {

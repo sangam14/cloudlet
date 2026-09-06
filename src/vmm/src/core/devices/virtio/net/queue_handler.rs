@@ -3,10 +3,9 @@
 
 use super::simple_handler::SimpleHandler;
 use crate::core::devices::virtio::SignalUsedQueue;
-use event_manager::{EventOps, Events, MutEventSubscriber};
+use event_manager::{EventOps, EventSet, Events, MutEventSubscriber};
 use log::error;
 use std::os::fd::AsRawFd;
-use vmm_sys_util::epoll::EventSet;
 use vmm_sys_util::eventfd::EventFd;
 
 const TAPFD_DATA: u32 = 0;
