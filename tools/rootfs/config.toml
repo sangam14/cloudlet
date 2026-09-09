@@ -1,7 +1,0 @@
-workload-name = "debug"
-language = "debug"
-action = "prepare-and-run"
-
-[server]
-address = "0.0.0.0"
-port = 50051

@@ -1,6 +1,6 @@
-pub mod client;
 pub mod config;
 mod frontend;
+pub mod models;
 pub mod runtime;
 pub mod service;
 pub mod state;

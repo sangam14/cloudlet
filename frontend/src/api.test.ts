@@ -31,7 +31,7 @@ describe('SSE decoder', () => {
     expect(event).toHaveBeenCalledWith({ stage: 'Done', exit_code: 0 });
   });
   it('surfaces backend stream errors instead of claiming completion', () => {
-    expect(() => new SseDecoder(vi.fn()).push(': VMM stream error: connection lost\n\n')).toThrow('connection lost');
+    expect(() => new SseDecoder(vi.fn()).push(': execution stream error: connection lost\n\n')).toThrow('connection lost');
   });
   it('rejects malformed and oversized frames', () => {
     expect(() => new SseDecoder(vi.fn()).push('data: {"stage":"fake"}\n\n')).toThrow('Invalid execution event');
@@ -62,11 +62,11 @@ describe('control plane transport', () => {
     expect(event).toHaveBeenCalledWith({ stage: 'Running', stdout: '你好' });
     expect(event).toHaveBeenLastCalledWith({ stage: 'Done', exit_code: 0 });
   });
-  it('surfaces HTTP authentication and broker errors', async () => {
+  it('surfaces HTTP authentication and runtime errors', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Token required', { status: 401 })));
     await expect(overview('', new AbortController().signal)).rejects.toBeInstanceOf(ApiError);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('VMM unavailable', { status: 503 })));
-    await expect(execute('x', 'code', '', new AbortController().signal, vi.fn())).rejects.toThrow('VMM unavailable');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('BoxLite unavailable', { status: 503 })));
+    await expect(execute('x', 'code', '', new AbortController().signal, vi.fn())).rejects.toThrow('BoxLite unavailable');
   });
   it('does not treat an HTML fallback as an execution stream', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html/>', { headers: { 'Content-Type': 'text/html' } })));
@@ -76,7 +76,7 @@ describe('control plane transport', () => {
     const fetch = vi.fn().mockResolvedValue(Response.json({ success: false }));
     vi.stubGlobal('fetch', fetch);
     await expect(shutdown('token')).rejects.toThrow('did not acknowledge');
-    expect(fetch).toHaveBeenCalledWith('/api/v1/vmm/shutdown', expect.objectContaining({ method: 'POST' }));
+    expect(fetch).toHaveBeenCalledWith('/api/v1/workloads/cancel', expect.objectContaining({ method: 'POST' }));
   });
   it('caps retained output', () => {
     const output = appendOutput('a'.repeat(100000), 'last line');

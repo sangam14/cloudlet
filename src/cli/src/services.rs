@@ -56,7 +56,7 @@ impl CloudletClient {
 
     pub async fn shutdown() -> Result<bool, ()> {
         let client = Client::new();
-        let endpoint = format!("{}/api/v1/vmm/shutdown", Self::api_endpoint());
+        let endpoint = format!("{}/api/v1/workloads/cancel", Self::api_endpoint());
         let response = Self::with_api_auth(client.post(endpoint)).send().await;
 
         let shutdown_response: ShutdownResponse =

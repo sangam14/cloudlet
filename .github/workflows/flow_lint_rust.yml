@@ -23,7 +23,7 @@ jobs:
         name: Use cached dependencies and artifacts
 
       - uses: arduino/setup-protoc@v3
-        name: Install Protoc
+        name: Install Protoc for BoxLite's internal guest protocol
 
       - uses: actions/setup-node@v4
         name: Install build-time Node.js

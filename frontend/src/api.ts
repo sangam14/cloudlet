@@ -71,7 +71,7 @@ export class SseDecoder {
 
   private frame(frame: string) {
     const lines = frame.split(/\r?\n/);
-    const error = lines.find(line => /^:\s*(VMM stream error|serialisation error):/.test(line));
+    const error = lines.find(line => /^:\s*(execution stream error|serialisation error):/.test(line));
     if (error) throw new Error(error.slice(1).trim());
     const data = lines.filter(line => line.startsWith('data:'))
       .map(line => line.slice(5).replace(/^ /, '')).join('\n');
@@ -115,11 +115,11 @@ export async function execute(name: string, code: string, token: string,
 }
 
 export async function shutdown(token: string) {
-  const response = await checked(await fetch('/api/v1/vmm/shutdown', {
+  const response = await checked(await fetch('/api/v1/workloads/cancel', {
     method: 'POST', headers: headers(token), signal: AbortSignal.timeout(10_000),
   }));
   const result = await response.json() as { success: boolean };
-  if (!result.success) throw new Error('The VMM did not acknowledge the shutdown request.');
+  if (!result.success) throw new Error('BoxLite did not acknowledge cancellation of an active execution.');
 }
 
 export async function sandboxAction(id: string, action: 'stop' | 'remove', token: string) {
@@ -149,4 +149,24 @@ export function executionOutput(event: ExecutionEvent): string {
   // The guest sends one line per field, with the newline removed by BufRead.
   const line = (text: string | null | undefined, prefix = '') => text == null ? '' : prefix + text + (text.endsWith('\n') ? '' : '\n');
   return line(event.stdout) + line(event.stderr, '[stderr] ');
+}
+
+export type ModelAction = 'pull' | 'run' | 'unload';
+export interface ModelSnapshot {
+  ready: boolean;
+  endpoint: string;
+  detail: string;
+  models: { name: string; size_bytes: number; loaded: boolean; stored: boolean }[];
+  operation: { action: ModelAction; model: string; status: 'running' | 'done' | 'failed' | 'unconfirmed'; detail: string; output: string } | null;
+}
+
+export async function models(token: string, signal: AbortSignal): Promise<ModelSnapshot> {
+  return (await checked(await fetch('/api/v1/models', { headers: headers(token), signal, cache: 'no-store' }))).json();
+}
+
+export async function modelOperation(action: ModelAction, model: string, prompt: string, token: string) {
+  await checked(await fetch('/api/v1/models/operations', {
+    method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, model, prompt }), signal: AbortSignal.timeout(10_000),
+  }));
 }

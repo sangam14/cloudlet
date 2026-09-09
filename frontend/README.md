@@ -25,6 +25,7 @@ development server loopback-only. Run transport tests with
 
 - `src/App.tsx`: navigation, templates, dialogs, session history, execution views.
 - `src/RuntimeInventory.tsx`: persistent BoxLite inventory and confirmed lifecycle actions.
+- `src/Models.tsx`: llmman inventory, confirmed downloads, prompts, unload, and latest operation output.
 - `src/components/ui/`: shared shadcn/Radix UI primitives.
 - `src/api.ts`: authenticated same-origin fetch, request contract, bounded SSE decoder.
 - `src/styles.css` and `src/tokens.css`: shared visual system and responsive layout.
@@ -36,4 +37,9 @@ Dashboard metrics report live guest allocations, not host capacity. Sandboxes
 shows persistent runtime inventory, while Activity output remains tab-local.
 Closing an execution stream requests guest cleanup. Stop/remove actions require
 confirmation; removing a stopped sandbox permanently deletes its guest disk.
-The model bridge is not configured for these network-disabled templates.
+Models use the Rust API's fixed-loopback llmman adapter, independently of KVM
+readiness. Inference runs on the host; these templates still have no network or
+guest model bridge. No model provider key is accepted by the UI. Downloading
+weights requires confirmation; llmman may separately download its inference
+engine on startup or first use. Model replies come from the API, never fixture
+data. The root README contains screenshots of all six console pages.

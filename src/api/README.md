@@ -19,7 +19,9 @@ API, embedded React/shadcn assets, and BoxLite runtime. No separate broker is us
 | POST | `/api/v1/workloads` | Submit Rust/Python/Node source; stream execution events (SSE) |
 | POST | `/api/v1/sandboxes/{id}/stop` | Stop an exact sandbox, including another tab's execution |
 | DELETE | `/api/v1/sandboxes/{id}` | Remove a stopped sandbox and guest disk, never force |
-| POST | `/api/v1/vmm/shutdown` | Request cancellation of the active execution |
+| POST | `/api/v1/workloads/cancel` | Request cancellation of the active BoxLite execution |
+| GET | `/api/v1/models` | llmman readiness, inventory, and latest operation |
+| POST | `/api/v1/models/operations` | Start a model pull, prompt, or unload operation |
 
 `/run` and `/shutdown` remain compatibility aliases. `/configuration`,
 `/logs/{id}`, and `/metrics/{id}` are not implemented.
@@ -33,8 +35,61 @@ use TLS before sending credentials over an untrusted network.
 
 BoxLite runs in-process with extracted helper subprocesses. Linux requires
 read/write KVM access. `CLOUDLET_BOXLITE_HOME` selects its persistent state
-directory. The legacy VMM endpoint/token does not select the execution backend.
-Guest networking and the old llmman bridge are disabled in the current templates.
+directory. BoxLite is the only sandbox backend; no separate VMM broker, custom
+gRPC client, alternate runtime feature, or broker credentials remain. BoxLite
+still uses its own internal host/guest protocol.
+Guest networking is disabled in the current templates. The model adapter is
+independent host inference, not guest-to-model networking. `/healthz` reports
+`runtime_endpoint: "embedded://boxlite"`; the former `vmm_endpoint` field and
+`/api/v1/vmm/shutdown` route have been removed. Use `/api/v1/workloads/cancel`.
+
+## Model operations
+
+`CLOUDLET_LLMMAN_URL` defaults to `http://127.0.0.1:17434`. Only an HTTP loopback
+IP endpoint without credentials, extra path, query, or fragment is accepted.
+Start llmman separately; Cloudlet never executes a host command to manage it.
+The adapter enforces the same Cloudlet auth/origin policy, disables redirects
+and proxy discovery, sends the llmman node-local hop header, and never forwards
+Cloudlet bearer credentials. llmman's own port remains unauthenticated.
+
+```json
+{"action":"run","model":"docker.io/ai/your-existing-model:latest","prompt":"Hello"}
+```
+
+Actions are `pull`, `run`, and `unload`. The model must appear in the local store
+before `run`; `unload` also accepts loaded models no longer present on disk.
+`pull` accepts a model name or OCI/Hugging Face reference, not an arbitrary URL
+or file path. Pull/unload do not require a prompt. Additional fields are rejected.
+
+Accepted operations return HTTP 202 with `{"accepted":true}`. Poll
+`GET /api/v1/models`; its shape is:
+
+```json
+{
+  "ready": true,
+  "endpoint": "http://127.0.0.1:17434",
+  "detail": "llmman connected · host inference · guests remain network-isolated",
+  "models": [],
+  "operation": null
+}
+```
+
+Each model has `name`, `size_bytes`, `loaded`, and `stored`. An operation has
+`action`, `model`, `status`, `detail`, and `output`. Status is `running`, `done`,
+`failed`, or `unconfirmed`. Confirmed upstream failures permit retry. Unknown
+completion blocks new operations until the operator verifies llmman is idle and
+restarts Cloudlet. Reconnecting a browser does not clear this guard. Only the
+latest operation is stored in API memory; there is no durable conversation log.
+
+Requests use at most 8 KiB prompt text and 256 generated tokens. The adapter
+bounds JSON replies to 1 MiB and streamed download progress to 16 KiB per frame.
+One operation runs at a time across Cloudlet clients, separate from the sandbox
+queue. Downloads may continue upstream after a 30-minute timeout or disconnect;
+generation and unloading have ten-minute timeouts. An unload acknowledgment is
+not independent verification of process exit. See the root README for setup,
+privacy, upstream compatibility, and real screenshots.
+
+## Sandbox operations
 
 Example workload body:
 

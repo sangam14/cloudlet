@@ -1,10 +1,11 @@
-use crate::{config::ApiConfig, runtime::SandboxRuntime};
+use crate::{config::ApiConfig, models::ModelRuntime, runtime::SandboxRuntime};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: ApiConfig,
     pub runtime: Arc<SandboxRuntime>,
+    pub models: Arc<ModelRuntime>,
 }
 
 impl AppState {
@@ -12,6 +13,7 @@ impl AppState {
         Self {
             config,
             runtime: Arc::new(SandboxRuntime::new()),
+            models: Arc::new(ModelRuntime::from_env()),
         }
     }
 }

@@ -1,7 +1,7 @@
 //! Shared contracts at the Cloudlet control-plane boundary.
 //!
 //! This crate intentionally contains only serialisable data. The API, CLI, and
-//! dashboard can evolve independently of the privileged VMM implementation.
+//! dashboard share HTTP data without depending on BoxLite's internal protocol.
 
 use std::path::PathBuf;
 
@@ -67,7 +67,7 @@ pub struct ShutdownResponse {
 pub struct HealthResponse {
     pub service: String,
     pub status: ServiceStatus,
-    pub vmm_endpoint: String,
+    pub runtime_endpoint: String,
     pub detail: String,
 }
 

@@ -1,4 +1,4 @@
-//! BoxLite is the primary, in-process runtime. Untrusted source is only ever
+//! BoxLite is the only sandbox runtime, embedded in-process. Untrusted source is only ever
 //! passed over guest stdin; it is never interpolated into a host command.
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
